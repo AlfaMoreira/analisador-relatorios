@@ -1,0 +1,43 @@
+# Dados de clientes — nunca versionar
+corpus/
+amostras/
+dados/
+revisoes/
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.xlsm
+*.heic
+*.HEIC
+*.jpg
+*.jpeg
+*.png
+*.zip
+
+# Segredos
+.env
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+dist/
+*.spec
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# SO / editores
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+
+# Estado de ferramentas locais
+.omc/
+.superpowers/
