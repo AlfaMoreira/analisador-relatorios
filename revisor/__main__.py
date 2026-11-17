@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QComboBox, QFileDialog, QListWidget, QListWidgetItem, QSpinBox,
-    QPlainTextEdit, QMessageBox, QSplitter)
+    QPlainTextEdit, QMessageBox, QSplitter, QTabWidget)
 
 from .auth import Auth, AuthError
 from .corpus import Corpus, prepare
@@ -128,10 +128,15 @@ class Window(QMainWindow):
         self.stop.clicked.connect(self.cancel.set)
         self.stop.setVisible(False)
         layout.addWidget(self.stop)
-        self.setCentralWidget(body)
+        from .review_ui import ReviewPanel
+        tabs = QTabWidget()
+        self.review_panel = ReviewPanel(self)
+        tabs.addTab(self.review_panel, "Revisão local e parecer")
+        tabs.addTab(body, "IA e biblioteca de referências")
+        self.setCentralWidget(tabs)
         self.controls = [self.accounts, self.login, self.add_account, self.logout, self.models,
                          self.refresh, self.import_button, self.add_page, self.clear, self.send, self.question,
-                         self.files, self.page]
+                         self.files, self.page, self.review_panel]
         self.accounts.currentIndexChanged.connect(self.change_account)
         self.reload_accounts()
         self.reload_files()

@@ -10,8 +10,10 @@ consulta assistida por IA com referências selecionadas. **A decisão de emitir 
 
 ## Situação
 
-Primeira implementação: aplicativo desktop com login ChatGPT e biblioteca local de referências.
-O motor de regras e o parecer previstos no design ainda não estão implementados.
+Piloto executável: revisão documental local, histórico, decisões justificadas,
+parecer PDF/JSON, login ChatGPT opcional e biblioteca de referências.
+O motor atual cobre verificações selecionadas de hidrogênio, ar comprimido respirável e ar ambiente.
+Outras famílias, validação normativa integral e liberação para produção permanecem pendentes.
 
 ### Executar no Windows
 
@@ -23,7 +25,20 @@ py -3.12 -m venv "$env:LOCALAPPDATA\Celacanto\ar-venv"
 & "$env:LOCALAPPDATA\Celacanto\ar-venv\Scripts\python.exe" -m revisor
 ```
 
-1. Importe os PDFs/fotos/ZIPs em **Biblioteca local**.
+### Revisão local, sem IA
+
+1. Na aba **Revisão local e parecer**, abra o relatório PDF e selecione as evidências disponíveis.
+2. Escolha a etapa documental e clique em **Executar conferência local**.
+3. Confira cada achado na página original. Informe revisor e justificativa para registrar decisões.
+4. Associe os laudos/certificados ao achado, após conferir o conteúdo e a rastreabilidade.
+5. Exporte o parecer PDF e/ou JSON. O histórico pode ser reaberto na mesma biblioteca.
+
+O parecer não autoriza emissão ou uso do sistema. Nenhum valor de imagem/IA é usado nas contas.
+Consulte [critérios de aceite e limites do piloto](docs/aceite-piloto.md).
+
+### Consulta ChatGPT opcional
+
+1. Na aba **IA e biblioteca de referências**, importe PDFs/fotos/ZIPs.
 2. Clique em **Continue with ChatGPT**, conclua o login no navegador e autorize o uso do plano, quando disponível.
 3. Clique em **Carregar modelos** e escolha um dos modelos da sua conta.
 4. Selecione um arquivo e uma página, visualize e clique em **Adicionar ao envio**.
@@ -37,6 +52,15 @@ Importação local não treina o ChatGPT. Consulte [detalhes e limitações](doc
 Testes: `python -m unittest discover -s tests -v`.
 Verificação de abertura: `python -m revisor --smoke --data-dir CAMINHO_TEMPORARIO`.
 
+Revisão por linha de comando: `python -m revisor.cli RELATORIO.pdf --output PASTA_PARECER`.
+Adicione `--evidence LAUDO.pdf` por arquivo de evidência disponível.
+
+### Pacote Windows
+
+Execute `Empacotar.ps1` para gerar uma pasta distribuível, sem exigir Python na máquina de destino.
+O executável fica em `dist/RevisorCelacanto/RevisorCelacanto.exe`; distribua a pasta inteira.
+O pacote ainda requer testes em outra máquina e não possui assinatura digital.
+
 - Design: [docs/superpowers/specs/2026-11-16-revisor-relatorios-design.md](docs/superpowers/specs/2026-11-16-revisor-relatorios-design.md)
 
 ## Princípios
@@ -49,7 +73,7 @@ Verificação de abertura: `python -m revisor --smoke --data-dir CAMINHO_TEMPORA
 ## Stack
 
 Python 3.12 · PySide6 (Qt) · PyMuPDF · pillow-heif · SDK `openai` · PyJWT · DPAPI Windows · SQLite.
-Empacotamento PyInstaller previsto.
+Empacotamento com PyInstaller; dados e credenciais permanecem fora da pasta do executável.
 
 ## Dados de clientes
 

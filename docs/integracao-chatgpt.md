@@ -1,8 +1,9 @@
 # Integração ChatGPT e referências locais
 
-Implementação inicial em 16/11/2026. O projeto anterior continha apenas o design.
-Esta entrega implementa a conexão e a consulta assistida, sem afirmar que o motor
-de regras, os parsers de relatórios ou a emissão de pareceres estejam prontos.
+Implementação em 16/11/2026. O projeto anterior continha apenas o design.
+O incremento atual inclui revisão documental local e pareceres PDF/JSON, além
+da conexão ChatGPT. Consulte [aceite do piloto](aceite-piloto.md) para o escopo
+implementado e as pendências. O motor completo de conferência ainda não está pronto.
 
 ## Autenticação
 

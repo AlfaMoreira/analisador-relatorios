@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 from PySide6.QtWidgets import QApplication, QMessageBox
 from revisor.__main__ import Window
+import pymupdf
 
 
 class ConsentTests(unittest.TestCase):
@@ -41,6 +42,39 @@ class ConsentTests(unittest.TestCase):
         self.assertNotIn("private-image-data", log)
         self.assertEqual([json.loads(line)["status"] for line in log.splitlines()], ["autorizado", "concluido"])
         self.assertIn("NÃO CONFIRMADOS", self.window.result.toPlainText())
+
+
+class ReviewWorkflowTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_local_review_decision_history_and_association(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            source = root / "relatorio.pdf"
+            doc = pymupdf.open()
+            doc.new_page().insert_text((40, 40), "Relatorio de Hidrogenio. " * 8 + "\nAnexo 1 - Relatorio de Ensaio\nAprovado por:")
+            doc.save(source)
+            doc.close()
+            window = Window(root / "app")
+            panel = window.review_panel
+            panel.report_path = str(source)
+            panel.evidence_paths = [str(source)]
+            with patch.object(window, "run_job", side_effect=lambda operation, done: done(operation())):
+                panel.run_review()
+            self.assertIsNotNone(panel.review)
+            panel.reviewer.setText("Revisor de teste")
+            panel.decision.setCurrentIndex(panel.decision.findData("corrigir"))
+            panel.comment.setText("Anexar evidência adequada")
+            panel.save_decision()
+            panel.link_evidence()
+            saved = panel.store.load(panel.store.list()[0])
+            self.assertEqual(saved.findings[0].decision, "corrigir")
+            self.assertTrue(saved.evidence_links)
+            panel.load_selected()
+            self.assertEqual(panel.review.id, saved.id)
+            window.close()
 
 
 if __name__ == "__main__":
