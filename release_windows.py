@@ -25,7 +25,9 @@ def main():
     checksum = dist / "SHA256SUMS.txt"
     checksum.write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + "  " + archive.name + "\n", encoding="utf-8")
     notes = dist / "release-notes.md"
-    notes.write_text(f"Piloto Celacanto {APP_VERSION}\n\nConferência local de todos os PDFs do conjunto, inclusive anexos; "
+    notes.write_text(f"Piloto Celacanto {APP_VERSION}\n\nNavegação simplificada: página com botões externos anterior/próxima "
+                     "e zoom com botões externos menos/mais, sem setas duplicadas dentro dos campos. "
+                     "Conferência local de todos os PDFs do conjunto, inclusive anexos; "
                      "cobertura por página, alertas de páginas sem texto suficiente e campos de modelo pendentes. "
                      "A integração de IA permanece sem alterações. Zero achados não significa aprovação. "
                      "Pacote Windows com atualizador integrado. "
