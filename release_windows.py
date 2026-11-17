@@ -25,7 +25,10 @@ def main():
     checksum = dist / "SHA256SUMS.txt"
     checksum.write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + "  " + archive.name + "\n", encoding="utf-8")
     notes = dist / "release-notes.md"
-    notes.write_text(f"Piloto Celacanto {APP_VERSION}\n\nPacote Windows com atualizador integrado. "
+    notes.write_text(f"Piloto Celacanto {APP_VERSION}\n\nConferência local de todos os PDFs do conjunto, inclusive anexos; "
+                     "cobertura por página, alertas de páginas sem texto suficiente e campos de modelo pendentes. "
+                     "A integração de IA permanece sem alterações. Zero achados não significa aprovação. "
+                     "Pacote Windows com atualizador integrado. "
                      "Preserva banco local, histórico e credenciais. Ainda requer revisão humana, validação com documentos completos "
                      "e teste de login/inferência reais. Não autoriza emissão técnica.\n", encoding="utf-8")
     if args.publish:

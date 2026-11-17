@@ -50,6 +50,28 @@ class PacketTests(unittest.TestCase):
         self.assertEqual(finding.severity, "alerta")
         self.assertIn("não presumir ausência", finding.expected)
 
+    def test_local_review_checks_annex_text_and_tracks_every_page_without_ai(self):
+        packet = build_packet([self.add_pdf("principal.pdf", 2),
+                               self.add_pdf("anexo.pdf", 1, "INSERIR RESULTADO ")])
+        with patch("revisor.ai.analyze", side_effect=AssertionError("IA não deve ser chamada")):
+            review = local_review(packet)
+        coverage = [c for c in review.checks if c["rule"] == "COB-01"]
+        self.assertEqual(len(coverage), 3)
+        annex = packet["documents"][1]
+        self.assertTrue(any(f.rule == "TXT-04" and f.document_sha256 == annex["sha256"]
+                            and f.page == 1 for f in review.findings))
+        self.assertEqual(review.ai_status, "nao_utilizada")
+
+    def test_local_review_reports_unreadable_page_even_in_textual_document(self):
+        entry = self.add_pdf("misto.pdf", 1)
+        packet = build_packet([entry])
+        packet["pages"].append(dict(packet["pages"][0], page=2, text=""))
+        packet["documents"][0]["pages"] = 2
+        review = local_review(packet)
+        self.assertTrue(any(f.rule == "COB-02" and f.page == 2 for f in review.findings))
+        self.assertEqual([c["status"] for c in review.checks if c["rule"] == "COB-01"],
+                         ["texto_conferido", "requer_leitura_visual"])
+
     def test_ai_keeps_document_and_page_reference_and_downgrades_to_suggestion(self):
         packet = build_packet([self.add_pdf("relatorio.pdf", 1), self.add_pdf("laudo.pdf", 2)])
         response = json.dumps({"resumo": "Revisão de teste", "achados": [{"arquivo": "D2", "pagina": 2,

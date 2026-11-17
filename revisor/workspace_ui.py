@@ -612,12 +612,19 @@ class Window(QMainWindow):
         count_ai = sum(f.origin == "ia" for f in review.findings)
         label = {"concluida": "IA concluída + regras locais", "falhou": "IA falhou; somente regras locais", "nao_utilizada": "Revisão local; IA não utilizada"}[review.ai_status]
         self.summary.setText(f"{label}\n{count_ai} sugestões da IA · {len(review.findings)-count_ai} achados locais. Clique para abrir a página.")
+        coverage = [c for c in review.checks if c.get("rule") == "COB-01"]
+        if coverage:
+            visual = sum(c["status"] == "requer_leitura_visual" for c in coverage)
+            self.summary.setText(self.summary.text() + f"\n{len(coverage)} páginas processadas · {visual} exigem leitura visual.")
+        self.summary.setToolTip("Conferência local: paginação, campos de modelo e regras técnicas disponíveis. "
+            "Nem todo conteúdo possui regra implementada. Zero achados não significa aprovação.")
         self.refresh_history()
         if review.findings:
             self.findings.selectRow(0)
             self.select_finding()
         else:
-            self.details.clear()
+            self.details.setPlainText("Conferência concluída sem apontamentos nas regras disponíveis.\n"
+                "Isso não comprova que todo o conteúdo esteja correto.\n\n" + "\n".join(review.limitations))
         self.status.setText("Apontamentos salvos. Marque os pontos pertinentes para confrontar com a próxima versão.")
 
     def selected_finding(self):
