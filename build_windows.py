@@ -20,6 +20,7 @@ def main():
     try:
         from PyInstaller.__main__ import run
         run(["--noconfirm", "--clean", "--onedir", "--windowed", "--name", "RevisorCelacanto",
+             "--add-data", str(project / "assets") + os.pathsep + "assets",
              "--distpath", str(Path(args.distpath).resolve()), "--workpath", str(work),
              "--specpath", str(work), str(project / "app.py")])
     finally:

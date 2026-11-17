@@ -62,7 +62,7 @@ class ReviewTests(unittest.TestCase):
         review = analyze_pages(document(), evidence_files=[{"name": "laudo.pdf", "sha256": "test"}])
         finding = next(f for f in review.findings if f.rule == "EVD-03")
         self.assertEqual(finding.severity, "alerta")
-        self.assertIn("associados", finding.expected)
+        self.assertIn("não presumir ausência", finding.expected)
 
     def test_draft_approval_is_informative(self):
         review = analyze_pages(document(), stage="rascunho")

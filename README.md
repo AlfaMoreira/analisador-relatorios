@@ -25,25 +25,26 @@ py -3.12 -m venv "$env:LOCALAPPDATA\Celacanto\ar-venv"
 & "$env:LOCALAPPDATA\Celacanto\ar-venv\Scripts\python.exe" -m revisor
 ```
 
-### Revisão local, sem IA
+### Fluxo único de revisão
 
-1. Na aba **Revisão local e parecer**, abra o relatório PDF e selecione as evidências disponíveis.
-2. Escolha a etapa documental e clique em **Executar conferência local**.
-3. Confira cada achado na página original. Informe revisor e justificativa para registrar decisões.
-4. Associe os laudos/certificados ao achado, após conferir o conteúdo e a rastreabilidade.
-5. Exporte o parecer PDF e/ou JSON. O histórico pode ser reaberto na mesma biblioteca.
+1. Use **Adicionar documentos** para receber o relatório completo e os anexos no mesmo conjunto. O primeiro PDF é o principal; as opções do conjunto permitem alterá-lo.
+2. Clique em **Conectar ChatGPT** se quiser IA. Após o login, os modelos são verificados automaticamente e a tela informa se a IA está pronta ou qual etapa falhou.
+3. Clique em **Iniciar revisão**. Com IA ligada, confirme o envio do conjunto: todas as páginas entram como texto e imagem, em lotes. Em seguida são executadas as regras locais. Sem IA, a revisão local funciona normalmente.
+4. Clique num apontamento para abrir o arquivo e a página correspondentes. Marque os pontos pertinentes, informe revisor e decisão quando quiser confirmar ou descartar, e registre a justificativa.
+5. Adicione documentos faltantes pelo mesmo botão e execute uma nova rodada. O histórico anterior permanece preservado.
+6. Selecione uma revisão anterior e use **Comparar com a revisão selecionada**. Pontos não redetectados exigem confirmação humana; o sistema não declara a correção como comprovada.
+7. **PDF comentado** exporta cópia do conjunto, com destaques amarelos nos trechos localizáveis, comentários e lista de apontamentos ao final. **Dados para melhoria** exporta JSON com a revisão e os exemplos confirmados.
+8. **Contribuir para a base local** cadastra somente exemplos confirmados ou descartados com revisor e justificativa. O uso desses exemplos na IA depende de seleção explícita e confirmação de envio. Não há treinamento automático do ChatGPT.
 
 O parecer não autoriza emissão ou uso do sistema. Nenhum valor de imagem/IA é usado nas contas.
 Consulte [critérios de aceite e limites do piloto](docs/aceite-piloto.md).
 
-### Consulta ChatGPT opcional
+### Uso da IA e limites
 
-1. Na aba **IA e biblioteca de referências**, importe PDFs/fotos/ZIPs.
-2. Clique em **Continue with ChatGPT**, conclua o login no navegador e autorize o uso do plano, quando disponível.
-3. Clique em **Carregar modelos** e escolha um dos modelos da sua conta.
-4. Selecione um arquivo e uma página, visualize e clique em **Adicionar ao envio**.
-5. Descreva a consulta e confirme os itens que serão enviados à OpenAI.
-6. Confira as sugestões nos originais. Valores de imagens permanecem não confirmados.
+A IA faz uma primeira leitura; as regras locais conferem em seguida. A origem de cada apontamento aparece na lista.
+Sugestões da IA permanecem não confirmadas e não autorizam cálculos a partir de imagens nem aprovação do relatório.
+Falha da IA fica visível; os resultados locais continuam disponíveis. Nenhuma página é omitida silenciosamente.
+As comparações entre lotes e versões exigem validação humana, assim como referências normativas não fornecidas.
 
 Os dados ficam em `%LOCALAPPDATA%\Celacanto\AnalisadorRelatorios`.
 Use `python -m revisor --data-dir CAMINHO` para outra biblioteca.

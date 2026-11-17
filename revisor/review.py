@@ -12,7 +12,7 @@ import uuid
 import pymupdf
 from .corpus import sha256
 
-RULES_VERSION = "0.2.0-piloto"
+RULES_VERSION = "0.3.0-piloto"
 DECISIONS = {"pendente", "aceito", "corrigir", "falso_positivo"}
 REFERENCES = [
     {"id": "FB-EDICOES", "title": "Anvisa: Farmacopeia Brasileira e edições anteriores",
@@ -58,6 +58,9 @@ class Finding:
     expected: str
     decision: str = "pendente"
     comment: str = ""
+    origin: str = "local"
+    document_sha256: str = ""
+    tracked: bool = False
 
 
 @dataclass
@@ -82,6 +85,10 @@ class Review:
         "Não verifica integralmente normas, contratos, incerteza ou segurança do sistema. Não libera emissão.",
     ])
     audit: list = field(default_factory=list)
+    documents: list = field(default_factory=list)
+    ai_status: str = "nao_utilizada"
+    ai_model: str = ""
+    comparison: dict = field(default_factory=dict)
 
     def to_dict(self):
         return asdict(self)
@@ -110,7 +117,10 @@ class Review:
 def analyze_pages(pages, source=None, evidence_files=None, stage="antes_da_emissao"):
     if stage not in {"antes_da_emissao", "rascunho"}:
         raise ValueError("Etapa documental inválida.")
-    source = source or {"name": "relatorio.pdf", "sha256": "sintetico"}
+    source = dict(source or {"name": "relatorio.pdf", "sha256": "sintetico"})
+    report_number = re.search(r"\bCCR-[A-Z]{3}\d{2}-\d+\b", "\n".join(pages), re.I)
+    if report_number:
+        source["report_number"] = report_number[0].upper()
     texts = [normalized(t) for t in pages]
     joined = "\n".join(texts)
     header = texts[0] if texts else ""
@@ -201,10 +211,11 @@ def analyze_pages(pages, source=None, evidence_files=None, stage="antes_da_emiss
     # Uma referência a anexos nunca comprova a presença ou identidade desses anexos.
     annex_page = next((i for i, t in enumerate(texts, 1) if "anexo 1" in t and "relatorio de ensaio" in t), None)
     if annex_page:
-        add("EVD-03", "bloqueante" if not evidence_files else "alerta", "Anexos citados exigem conferência", annex_page,
+        possibly_included = bool(evidence_files) or len(pages) > annex_page
+        add("EVD-03", "alerta" if possibly_included else "bloqueante", "Anexos citados exigem conferência", annex_page,
             "Cita relatório de ensaio e certificados de calibração.",
-            "Ausentes do pacote de evidências selecionado." if not evidence_files else
-            "Arquivos fornecidos ainda precisam ser associados ao laudo e aos certificados pelo revisor.")
+            "Não localizados no pacote recebido; conferir e adicionar as evidências faltantes." if not possibly_included else
+            "Há arquivos adicionais ou páginas após a lista de anexos. Conferir se contêm os laudos e certificados citados; não presumir ausência.")
     sample_dates = []
     for text in texts:
         if "especificacao" in text and "data de amostragem" in text:
@@ -283,3 +294,36 @@ class ReviewStore:
         if path.parent != self.root.resolve():
             raise ValueError("Revisão fora da biblioteca local.")
         return Review.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def compare_reviews(previous, current):
+    """Ausência de redetecção não equivale a correção confirmada."""
+    def identity(review):
+        value = review.source.get("report_number")
+        if value:
+            return value
+        match = re.search(r"CCR-[A-Z]{3}\d{2}-\d+", review.source["name"], re.I)
+        return match[0].upper() if match else None
+    old_id, new_id = identity(previous), identity(current)
+    if previous.id == current.id:
+        raise ValueError("Selecione uma revisão anterior diferente da atual.")
+    if previous.family != current.family or (old_id and new_id and old_id != new_id):
+        raise ValueError("Os documentos parecem pertencer a relatórios diferentes. Selecione versões do mesmo relatório.")
+    tracked = [f for f in previous.findings if f.tracked]
+    if not tracked:
+        raise ValueError("Marque os pontos pertinentes na revisão anterior antes de comparar.")
+    available = list(current.findings)
+    rows = []
+    for old in tracked:
+        match = next((f for f in available if f.origin == old.origin and f.rule == old.rule and normalized(f.title) == normalized(old.title)), None)
+        if match:
+            available.remove(match)
+        rows.append({"state": "persiste" if match else "nao_redetectado", "title": old.title, "rule": old.rule,
+                     "origin": old.origin, "previous_page": old.page, "current_page": match.page if match else None,
+                     "previous_finding": old.id, "current_finding": match.id if match else None})
+    rows.extend({"state": "novo", "title": f.title, "rule": f.rule, "origin": f.origin,
+                 "previous_page": None, "current_page": f.page, "previous_finding": None, "current_finding": f.id}
+                for f in available)
+    return {"previous_review": previous.id, "current_review": current.id, "items": rows,
+            "identity_confirmed": bool(old_id and new_id),
+            "note": "Comparação de apontamentos por regra e título. Não redetectado exige confirmação humana; não significa correção comprovada. Sugestões da IA podem variar entre rodadas."}

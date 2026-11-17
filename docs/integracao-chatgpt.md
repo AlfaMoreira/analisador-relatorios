@@ -27,11 +27,12 @@ dependem da conta, do plano e da habilitação da OpenAI para a integração.
 
 O catálogo é carregado de /v1/models com o token da conta ativa. Usa /v1/responses,
 store=false e stream=true. Resposta parcial, interrompida ou com falha é rejeitada.
-As consultas não usam Files API nem file_search. Cada página/imagem é convertida
-localmente para JPEG, limitada a 2400 pixels, e enviada como input_image.
+As consultas não usam Files API nem file_search. Todas as páginas do conjunto são
+enviadas como texto extraído e imagem JPEG limitada a 2400 pixels, em lotes de até
+quatro imagens. Não há omissão silenciosa de páginas.
 
-Antes de cada consulta a interface lista arquivo e página e solicita autorização.
-Somente os itens da fila e o texto digitado são enviados. envios.jsonl registra
+Antes de cada rodada a interface lista os arquivos, o total de páginas/lotes e os
+exemplos confirmados opcionais, e solicita autorização. envios.jsonl registra
 horário UTC, conta, modelo, nome/hash/página e estado do envio, sem tokens ou texto
 do relatório. O resultado aparece como rascunho com valores não confirmados.
 Não existe caminho de dados desse rascunho para cálculos ou liberação automática.
@@ -44,8 +45,8 @@ para uma consulta autorizada. Critérios não são promovidos automaticamente a 
 Documentos são tratados como dados, inclusive quando contêm texto de instruções.
 
 ZIPs são lidos sem extrair seus caminhos; arquivos suportados são copiados por
-hash. Limites: 100 MB por arquivo, 2000 entradas e 1 GB expandido por ZIP, até oito
-páginas/imagens por consulta. PDFs escaneados e HEIC são renderizados localmente.
+hash. Limites: 100 MB por arquivo, 2000 entradas e 1 GB expandido por ZIP, até 500
+páginas por PDF e 600 no conjunto; cada lote tem até quatro imagens. PDFs e HEIC são renderizados localmente.
 Os arquivos originais permanecem intactos e não devem entrar no Git.
 
 ## Referências oficiais

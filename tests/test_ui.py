@@ -1,14 +1,19 @@
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
-from PySide6.QtWidgets import QApplication, QMessageBox
-from revisor.__main__ import Window
 import pymupdf
+from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtCore import QCoreApplication, QEvent
+from revisor.__main__ import Window
+from revisor.auth import AuthError
+from revisor.packet import build_packet
+from revisor.review import Finding
 
 
-class ConsentTests(unittest.TestCase):
+class UnifiedWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
@@ -16,65 +21,122 @@ class ConsentTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.window = Window(self.root)
-        self.window.models.addItem("Modelo de teste", "test-model")
-        self.window.question.setPlainText("Conferir o documento")
-        self.window.attachments = [{"name": "selecionado.jpg", "page": 1, "sha256": "hash", "data": "private-image-data"}]
+        self.window = Window(self.root / "app")
+        self.window.run_job = lambda operation, done: done(operation(lambda _text: None, threading.Event()))
+        self.source = self.make_pdf("relatorio.pdf", "Relatorio de Hidrogenio. " * 8 + "\nAnexo 1 - Relatorio de Ensaio\nAprovado por:")
+        self.window.add_paths([str(self.source)])
+
+    def make_pdf(self, name, text, pages=1):
+        path = self.root / name
+        document = pymupdf.open()
+        for index in range(pages):
+            document.new_page().insert_text((40, 40), text + f"\nPagina de teste {index+1}")
+        document.save(path)
+        document.close()
+        return path
 
     def tearDown(self):
         self.window.close()
+        self.window.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        self.app.processEvents()
         self.temp.cleanup()
 
+    def ready_ai(self):
+        self.window.ia_ready = True
+        self.window.models.clear()
+        self.window.models.addItem("Modelo de teste", "test-model")
+        self.window.use_ai.setChecked(True)
+
     def test_refusing_consent_never_sends_or_logs(self):
-        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.No), patch("revisor.ai.analyze") as infer:
-            self.window.analyze()
+        self.ready_ai()
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.No), patch("revisor.ai.review_packet") as infer:
+            self.window.start_review()
         infer.assert_not_called()
-        self.assertFalse((self.root / "envios.jsonl").exists())
+        self.assertFalse((self.window.root / "envios.jsonl").exists())
+        self.assertIsNone(self.window.review)
 
-    def test_consent_sends_only_selected_sources_and_audits_without_image(self):
-        def run(operation, done):
-            done(operation())
-        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes), patch.object(self.window, "run_job", side_effect=run), patch("revisor.ai.analyze", return_value="Sugestão") as infer:
-            self.window.analyze()
-        self.assertEqual(len(infer.call_args.args[3]), 1)
-        self.assertEqual(infer.call_args.args[3][0]["name"], "selecionado.jpg")
-        log = (self.root / "envios.jsonl").read_text(encoding="utf-8")
-        self.assertNotIn("private-image-data", log)
+    def test_ai_first_then_local_rules_and_safe_audit(self):
+        self.ready_ai()
+        events = []
+        from revisor.packet import local_review
+        def infer(*args):
+            events.append("ia")
+            return [], []
+        def local(packet):
+            events.append("local")
+            return local_review(packet)
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes), patch("revisor.ai.review_packet", side_effect=infer), patch("revisor.workspace_ui.local_review", side_effect=local):
+            self.window.start_review()
+        self.assertEqual(events, ["ia", "local"])
+        self.assertEqual(self.window.review.ai_status, "concluida")
+        log = (self.window.root / "envios.jsonl").read_text(encoding="utf-8")
+        self.assertNotIn("base64", log)
         self.assertEqual([json.loads(line)["status"] for line in log.splitlines()], ["autorizado", "concluido"])
-        self.assertIn("NÃO CONFIRMADOS", self.window.result.toPlainText())
 
+    def test_ai_failure_is_visible_and_local_results_remain_available(self):
+        self.ready_ai()
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes), patch("revisor.ai.review_packet", side_effect=AuthError("Sem permissão para IA")), patch.object(self.window, "show_error") as warning:
+            self.window.start_review()
+        self.assertEqual(self.window.review.ai_status, "falhou")
+        self.assertTrue(self.window.review.findings)
+        self.assertIn("IA falhou", self.window.summary.text())
+        warning.assert_called_once()
 
-class ReviewWorkflowTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.app = QApplication.instance() or QApplication([])
+    def test_offline_review_does_not_call_ai(self):
+        with patch("revisor.ai.review_packet") as infer:
+            self.window.start_review()
+        infer.assert_not_called()
+        self.assertEqual(self.window.review.ai_status, "nao_utilizada")
 
-    def test_local_review_decision_history_and_association(self):
-        with tempfile.TemporaryDirectory() as root:
-            root = Path(root)
-            source = root / "relatorio.pdf"
-            doc = pymupdf.open()
-            doc.new_page().insert_text((40, 40), "Relatorio de Hidrogenio. " * 8 + "\nAnexo 1 - Relatorio de Ensaio\nAprovado por:")
-            doc.save(source)
-            doc.close()
-            window = Window(root / "app")
-            panel = window.review_panel
-            panel.report_path = str(source)
-            panel.evidence_paths = [str(source)]
-            with patch.object(window, "run_job", side_effect=lambda operation, done: done(operation())):
-                panel.run_review()
-            self.assertIsNotNone(panel.review)
-            panel.reviewer.setText("Revisor de teste")
-            panel.decision.setCurrentIndex(panel.decision.findData("corrigir"))
-            panel.comment.setText("Anexar evidência adequada")
-            panel.save_decision()
-            panel.link_evidence()
-            saved = panel.store.load(panel.store.list()[0])
-            self.assertEqual(saved.findings[0].decision, "corrigir")
-            self.assertTrue(saved.evidence_links)
-            panel.load_selected()
-            self.assertEqual(panel.review.id, saved.id)
-            window.close()
+    def test_attachments_added_later_use_the_same_entry_point(self):
+        self.window.start_review()
+        old_id = self.window.review.id
+        annex = self.make_pdf("anexo.pdf", "Certificado de calibracao de teste " * 6)
+        self.window.add_paths([str(annex)])
+        self.window.start_review()
+        self.assertEqual(len(self.window.review.documents), 2)
+        self.assertEqual(self.window.review.source["name"], "relatorio.pdf")
+        self.assertNotEqual(self.window.review.id, old_id)
+        self.assertTrue(any(e.get("previous_review") == old_id for e in self.window.review.audit))
+
+    def test_clicking_ai_finding_navigates_to_attachment_page(self):
+        annex = self.make_pdf("anexo.pdf", "Laudo de teste " * 10, pages=2)
+        self.window.add_paths([str(annex)])
+        self.window.start_review()
+        digest = self.window.entries[1][2]
+        finding = Finding("test-ai", "IA-01", "alerta", "Conferir anexo", 2, "Dado não confirmado", "Conferir", origin="ia", document_sha256=digest)
+        self.window.review.findings.insert(0, finding)
+        self.window.show_review(self.window.review)
+        self.assertEqual(self.window.active_entry[2], digest)
+        self.assertEqual(self.window.page.value(), 2)
+
+    def test_decision_and_packet_restore_from_history(self):
+        self.window.start_review()
+        self.window.reviewer.setText("Revisor de teste")
+        self.window.decision.setCurrentIndex(self.window.decision.findData("corrigir"))
+        self.window.comment.setText("Solicitar evidências")
+        self.window.save_tracking()
+        identifier = self.window.review.id
+        self.window.entries = []
+        self.window.load_history()
+        self.assertEqual(self.window.review.id, identifier)
+        self.assertEqual(self.window.review.findings[0].decision, "corrigir")
+        self.assertTrue(self.window.entries)
+
+    def test_models_load_automatically_after_login(self):
+        with patch.object(self.window.auth, "sign_in", return_value="Login validado"), patch("revisor.ai.models", return_value=[("slug", "Modelo")]):
+            self.window.sign_in()
+        self.assertTrue(self.window.ia_ready)
+        self.assertTrue(self.window.use_ai.isChecked())
+        self.assertIn("IA pronta", self.window.ai_state.text())
+
+    def test_missing_plan_permission_does_not_show_ai_ready(self):
+        with patch("revisor.ai.models", side_effect=AuthError("Uso do plano não autorizado")):
+            self.window.load_models()
+        self.assertFalse(self.window.ia_ready)
+        self.assertFalse(self.window.use_ai.isChecked())
+        self.assertIn("não autorizado", self.window.status.text())
 
 
 if __name__ == "__main__":

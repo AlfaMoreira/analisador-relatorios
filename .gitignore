@@ -15,6 +15,7 @@ revisoes/
 *.jpeg
 *.png
 *.zip
+!assets/celacanto-horizontal.jpeg
 
 # Segredos
 .env

@@ -56,14 +56,14 @@ class Corpus:
             raise ValueError("Integridade da cópia local comprometida.")
         with self.connect() as db:
             db.execute("INSERT OR IGNORE INTO files(name,digest,path) VALUES(?,?,?)", (name, digest, str(target)))
+        return digest
 
     def import_file(self, path):
         path = Path(path)
         if path.suffix.lower() != ".zip":
             if path.stat().st_size > MAX_FILE:
                 raise ValueError("Arquivo acima de 100 MB.")
-            self.add_bytes(path.name, path.read_bytes())
-            return
+            return [self.add_bytes(path.name, path.read_bytes())]
         # Não extrai caminhos do ZIP; o destino é sempre o hash do conteúdo.
         with zipfile.ZipFile(path) as archive:
             infos = archive.infolist()
@@ -79,8 +79,7 @@ class Corpus:
                 if info.file_size > MAX_FILE or info.flag_bits & 1:
                     raise ValueError("ZIP contém arquivo grande demais ou criptografado.")
                 candidates.append(info)
-            for info in candidates:
-                self.add_bytes(PurePosixPath(info.filename).name, archive.read(info))
+            return [self.add_bytes(PurePosixPath(info.filename).name, archive.read(info)) for info in candidates]
 
 
 def prepare(entry, page=1):

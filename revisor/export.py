@@ -52,16 +52,20 @@ def export_pdf(review, target):
              f"<b>Família:</b> {esc(review.family)} | <b>Páginas:</b> {review.page_count}<br>"
              f"<b>Revisor:</b> {esc(review.reviewer or 'não informado')}<br>"
              f"<b>Etapa:</b> {esc(review.stage)} | <b>Regras:</b> {esc(review.rules_version)}<br>"
+             f"<b>IA:</b> {esc(review.ai_status)} | <b>Modelo:</b> {esc(review.ai_model or 'não utilizado')}<br>"
              f"<b>Criação UTC:</b> {esc(review.created_at)}</p>",
              "<p>Este parecer registra achados locais e decisões humanas. Não substitui laudos, certificados, "
              "avaliação normativa ou decisão de emissão. Valores de imagens não entram nas contas.</p>",
              f"<p><b>SHA-256 do original:</b><br>{esc(review.source['sha256'][:32])}<br>{esc(review.source['sha256'][32:])}</p>",
              "<h2>Achados e decisões</h2>"]
     for finding in review.findings:
+        origin_name = next((d["name"] for d in review.documents if d["sha256"] == finding.document_sha256), review.source["name"])
         parts.append(f"<div class='finding'><h3>{esc(finding.rule)} | {esc(finding.severity)} | página {finding.page}</h3>"
+                     f"<p><b>Origem:</b> {esc('IA - sugestão não confirmada' if finding.origin == 'ia' else 'Regra local')} | {esc(origin_name)}</p>"
                      f"<p><b>{esc(finding.title)}</b><br><b>Evidência:</b> {esc(finding.evidence)}<br>"
                      f"<b>Conferência esperada:</b> {esc(finding.expected)}<br>"
                      f"<b>Decisão:</b> {esc(finding.decision)}<br><b>Justificativa:</b> {esc(finding.comment or 'pendente')}</p></div>")
+        parts.append(f"<p><b>Acompanhar na próxima versão:</b> {'sim' if finding.tracked else 'não marcado'}</p>")
     if not review.findings:
         parts.append("<p>Nenhum achado nas regras aplicadas. Isso não comprova conformidade.</p>")
     parts.append("<h2>Verificações locais</h2>")
@@ -81,6 +85,13 @@ def export_pdf(review, target):
         for link in review.evidence_links.get(finding.id, []):
             parts.append(f"<p>{esc(finding.rule)}: {esc(names.get(link['sha256'], 'arquivo não identificado'))} "
                          f"({esc(link['role'])}), associado por {esc(link['reviewer'])}.</p>")
+    if review.comparison:
+        parts.append("<h2>Comparação com a revisão anterior</h2>")
+        parts.append("<p>" + esc(review.comparison["note"]) + "</p>")
+        labels = {"persiste": "Ainda detectado", "nao_redetectado": "Não redetectado - confirmar", "novo": "Novo apontamento"}
+        for item in review.comparison["items"]:
+            parts.append(f"<p><b>{esc(labels[item['state']])}:</b> {esc(item['title'])} "
+                         f"(página anterior {esc(item['previous_page'] or '-')}; atual {esc(item['current_page'] or '-')}).</p>")
     parts.append("<h2>Referências e limites</h2>")
     for reference in review.references:
         parts.append(f"<p><b>{esc(reference['title'])}</b><br>{esc(reference['scope'])}<br>"
@@ -95,6 +106,10 @@ def export_pdf(review, target):
             message = f"{event['at'][:19]} UTC - Revisão local criada com regras {review.rules_version}."
         elif event.get("event") == "evidencia_associada":
             message = f"{event['at'][:19]} UTC - {event['reviewer']} associou evidência como {event['role']}."
+        elif event.get("event") == "apontamento_atualizado":
+            message = f"{event['at'][:19]} UTC - Apontamento {'marcado para acompanhamento' if event['tracked'] else 'desmarcado'}. {event.get('comment', '')}"
+        elif event.get("event") == "nova_rodada":
+            message = f"{event['at'][:19]} UTC - Nova rodada vinculada à revisão anterior. Decisões anteriores não foram transferidas automaticamente."
         else:
             message = (f"{event['at'][:19]} UTC - {event.get('reviewer', '')}: "
                        f"{event.get('before', '')} para {event.get('after', '')}. {event.get('comment', '')}")
