@@ -13,6 +13,12 @@ A partir da versão 0.5, a revisão por IA recebe a skill incorporada ao program
 
 Sem perfil, a revisão documental continua disponível e declara que critérios contratuais não foram verificados. Sem IA, o perfil é guardado para rastreabilidade, mas critérios personalizados não são executados pelo motor local; continuam valendo as regras limitadas do piloto.
 
+## Localização dos apontamentos (0.5.1)
+
+Selecionar um apontamento abre seu arquivo/página e marca em amarelo o trecho literal localizado, com rolagem até a primeira área. A marcação é temporária no visualizador, acompanha zoom e rotação e não modifica o original. O painel organiza ponto, local, prioridade, origem, evidência e ação a conferir/corrigir. Amarelo indica a localização da evidência, não confirmação de erro.
+
+Novas respostas da IA incluem uma citação literal separada da explicação. Nas revisões antigas, a busca usa a evidência ou suas citações explícitas quando possível. Se não houver texto localizável, o aplicativo informa a limitação e mantém a indicação de página; não estima retângulos em imagens nem destaca números isolados por aproximação. A cópia PDF comentada utiliza o mesmo localizador; quando não localiza o trecho, mantém comentário na página.
+
 ## Estrutura dos critérios
 
 Cada item tem `id`, `parameter`, `requirement`, `source`, `section` e `applicability`. A fonte identifica contrato/norma, edição e seção; o programa não verifica automaticamente autenticidade ou aplicabilidade da fonte cadastrada. Requisitos numéricos acrescentam `operator`, `limit` (decimal com ponto) e `unit`. Operadores: `>`, `>=`, `<`, `<=`, `=`, `informativo`. Critérios documentais podem omitir operador e limite.

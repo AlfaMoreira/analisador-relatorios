@@ -30,8 +30,10 @@ def prepare_context(packet, scope, profile, examples=None):
 
 
 def snapshot(packet):
+    from .version import APP_VERSION
     skill = packet.get("skill", {})
     return {"scope": packet.get("scope", {}), "criteria_profile": packet.get("criteria_profile"),
+            "app_version": APP_VERSION,
             "provider": "OpenAI", "configuration": {"store": False, "stream": True, "max_images_per_batch": 4},
             "ai_execution": packet.get("ai_execution", {}),
             "skill": {k: v for k, v in skill.items() if k != "instructions"},

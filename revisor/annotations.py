@@ -1,11 +1,11 @@
 """Cópia do conjunto com destaques e comentários; originais preservados."""
 import base64
 from pathlib import Path
-import re
 import tempfile
 import pymupdf
 from .corpus import prepare
 from .export import protect_originals, export_pdf
+from .locate import locate_finding
 
 
 def export_annotated(review, path):
@@ -43,13 +43,7 @@ def export_annotated(review, path):
                        f"Evidência: {finding.evidence}\nConferir: {finding.expected}\n"
                        f"Decisão: {finding.decision}\nRevisor: {review.reviewer or 'não informado'}\n"
                        f"Anotação: {finding.comment or 'pendente'}")
-            exact = finding.evidence.removeprefix("Sugestão de IA não confirmada: ").strip()
-            quads = page.search_for(exact, quads=True) if len(exact) < 600 else []
-            # Só destaca localizações encontradas; nunca inventa um recorte da página.
-            if not quads:
-                candidates = re.findall(r"[<>≤≥]?\s*\d[\d.,]*\s*(?:%|ppm|mg/m³|UFC/m³)", exact, re.I)
-                for candidate in candidates:
-                    quads.extend(page.search_for(candidate.strip(), quads=True))
+            quads, _method = locate_finding(page, finding)
             if quads:
                 annotation = page.add_highlight_annot(quads)
                 annotation.set_colors(stroke=(1, 0.86, 0.15))

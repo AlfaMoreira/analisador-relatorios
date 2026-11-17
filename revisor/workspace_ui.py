@@ -6,8 +6,8 @@ import threading
 import sys
 
 import pymupdf
-from PySide6.QtCore import Qt, QThread, Signal, QTimer
-from PySide6.QtGui import QPixmap, QIcon
+from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPointF
+from PySide6.QtGui import QPixmap, QIcon, QPainter, QColor, QPolygonF
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QFileDialog, QListWidget, QListWidgetItem, QSpinBox,
     QPlainTextEdit, QMessageBox, QSplitter, QTableWidget, QTableWidgetItem,
@@ -26,6 +26,7 @@ from .updates import check_update, stage_update, start_installer, UpdateError
 from .profiles import ProfileStore, FAMILIES
 from .profile_ui import ProfileDialog
 from .context import prepare_context, snapshot
+from .locate import locate_finding
 
 
 class NavigationSpinBox(QSpinBox):
@@ -274,6 +275,10 @@ class Window(QMainWindow):
         zoom_in.clicked.connect(lambda: self.zoom.stepUp())
         navigation.addWidget(zoom_in)
         cl.addLayout(navigation)
+        self.highlight_note = QLabel("Selecione um apontamento: o trecho localizado aparecerá em amarelo.")
+        self.highlight_note.setWordWrap(True)
+        self.highlight_note.setStyleSheet("background:#fff8d6;color:#665111;border:1px solid #e6d58a;border-radius:7px;padding:7px;")
+        cl.addWidget(self.highlight_note)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(False)
         self.preview = QLabel("Adicione o documento completo para começar.\nOs achados abrirão a página correspondente aqui.")
@@ -308,7 +313,7 @@ class Window(QMainWindow):
         rl.addWidget(self.findings, 1)
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
-        self.details.setMaximumHeight(165)
+        self.details.setMaximumHeight(230)
         rl.addWidget(self.details)
         self.tracked = QCheckBox("Este ponto é pertinente · acompanhar na próxima versão")
         rl.addWidget(self.tracked)
@@ -582,6 +587,7 @@ class Window(QMainWindow):
             self.preview.setText("Não foi possível abrir este documento.")
 
     def render_page(self):
+        self._render_sequence = getattr(self, "_render_sequence", 0) + 1
         if not self.active_entry:
             return
         try:
@@ -589,13 +595,52 @@ class Window(QMainWindow):
             attachment = prepare(self.active_entry, self.page.value())
             pix = QPixmap()
             pix.loadFromData(base64.b64decode(attachment["data"].split(",", 1)[1]))
+            finding = self.selected_finding()
+            focus = None
+            self.highlight_note.setText("Selecione um apontamento: o trecho localizado aparecerá em amarelo.")
+            if finding and self.review:
+                digest = finding.document_sha256 or self.review.source["sha256"]
+                if digest == self.active_entry[2] and finding.page == self.page.value():
+                    if Path(self.active_entry[3]).suffix.lower() == ".pdf":
+                        with pymupdf.open(self.active_entry[3]) as document:
+                            page = document[self.page.value() - 1]
+                            quads, method = locate_finding(page, finding)
+                            if quads:
+                                painter = QPainter(pix)
+                                try:
+                                    painter.setPen(Qt.PenStyle.NoPen)
+                                    painter.setBrush(QColor(255, 220, 0, 100))
+                                    for quad in quads:
+                                        visual = quad * page.rotation_matrix
+                                        points = [visual.ul, visual.ur, visual.lr, visual.ll]
+                                        coords = [(p.x * pix.width() / page.rect.width,
+                                                   p.y * pix.height() / page.rect.height) for p in points]
+                                        painter.drawPolygon(QPolygonF([QPointF(x, y) for x, y in coords]))
+                                        if focus is None:
+                                            focus = (sum(x for x, _ in coords) / 4 / pix.width(),
+                                                     sum(y for _, y in coords) / 4 / pix.height())
+                                finally:
+                                    painter.end()
+                                self.highlight_note.setText(f"Amarelo: {method} do apontamento selecionado · {len(quads)} área(s). O original permanece intacto.")
+                            else:
+                                self.highlight_note.setText("Trecho não localizado no texto do PDF. Confira a página indicada; nenhuma área foi marcada por suposição.")
+                    else:
+                        self.highlight_note.setText("Imagem sem localização textual. Confira visualmente a página; nenhuma área foi marcada por suposição.")
+                else:
+                    self.highlight_note.setText(f"O apontamento selecionado se refere à página {finding.page} de outro local. Clique nele para voltar ao trecho.")
             width = int(760 * self.zoom.value() / 100)
             pix = pix.scaledToWidth(width, Qt.TransformationMode.SmoothTransformation)
             self.preview.setMinimumSize(0, 0)
             self.preview.setPixmap(pix)
             self.preview.resize(pix.size())
+            if focus:
+                x, y = int(focus[0] * pix.width()), int(focus[1] * pix.height())
+                sequence = self._render_sequence
+                QTimer.singleShot(0, self.scroll, lambda: self.scroll.ensureVisible(x, y, 80, 100)
+                                  if sequence == self._render_sequence else None)
         except Exception:
             self.preview.setText("Página indisponível ou arquivo alterado.")
+            self.highlight_note.setText("Não foi possível localizar o trecho nesta página.")
 
     def refresh_profiles(self, selected=None):
         self.profile.blockSignals(True)
@@ -774,9 +819,11 @@ class Window(QMainWindow):
         self.findings.blockSignals(True)
         self.findings.setRowCount(len(review.findings))
         for row, finding in enumerate(review.findings):
-            for col, text in enumerate(["IA" if finding.origin == "ia" else "Regra", finding.page, finding.title, "Sim" if finding.tracked else "—"]):
+            category = {"bloqueante": "PRIORITÁRIO", "alerta": "CONFERIR", "informativo": "INFORMAÇÃO"}.get(finding.severity, "CONFERIR")
+            for col, text in enumerate(["IA" if finding.origin == "ia" else "Regra", finding.page, f"{category} · {finding.title}", "Sim" if finding.tracked else "—"]):
                 item = QTableWidgetItem(str(text))
-                item.setToolTip(f"{finding.severity} · {finding.rule}")
+                origin_name = next((d["name"] for d in review.documents if d["sha256"] == finding.document_sha256), review.source["name"])
+                item.setToolTip(f"{finding.title}\nArquivo: {origin_name}\nPágina: {finding.page}\n{finding.severity} · {finding.rule}\n{finding.evidence}")
                 self.findings.setItem(row, col, item)
         self.findings.blockSignals(False)
         count_ai = sum(f.origin == "ia" for f in review.findings)
@@ -815,9 +862,17 @@ class Window(QMainWindow):
             self.files.setCurrentRow(row)
             self.page.setValue(finding.page)
             self.render_page()
-        self.details.setPlainText(f"{'Sugestão da IA · confirmar' if finding.origin == 'ia' else 'Regra do software'}\n"
-                                 f"{finding.severity} · {finding.rule} · página {finding.page}\n\n"
-                                 f"{finding.evidence}\n\nConferir: {finding.expected}")
+        else:
+            self.preview.setText("Arquivo do apontamento indisponível no conjunto atual. Reabra a revisão ou adicione o arquivo.")
+            self.highlight_note.setText("Não é possível destacar o trecho sem o documento correspondente.")
+        filename = next((e[1] for e in self.entries if e[2] == digest), self.review.source["name"])
+        priority = {"bloqueante": "Erro a verificar antes de concluir", "alerta": "Atenção: exige conferência",
+                    "informativo": "Informação para revisão"}.get(finding.severity, finding.severity)
+        self.details.setPlainText(f"PONTO: {finding.title}\n"
+            f"LOCAL: {filename} · página {finding.page}\n"
+            f"TIPO: {priority} · {finding.rule}\n"
+            f"ORIGEM: {'IA — sugestão não confirmada' if finding.origin == 'ia' else 'Conferência do programa'}\n\n"
+            f"EVIDÊNCIA: {finding.evidence}\n\nO QUE CONFERIR / CORRIGIR: {finding.expected}")
         self.tracked.setChecked(finding.tracked)
         self.decision.setCurrentIndex(max(0, self.decision.findData(finding.decision)))
         self.comment.setText(finding.comment)

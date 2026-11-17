@@ -191,6 +191,35 @@ class UnifiedWorkflowTests(unittest.TestCase):
         self.assertEqual(self.window.zoom.text(), "90%")
         self.assertGreater(self.window.zoom.lineEdit().width(), 30)
 
+    def test_selected_reference_is_yellow_in_viewer_and_original_is_preserved(self):
+        import base64
+        from PySide6.QtGui import QPixmap
+        from PySide6.QtCore import Qt
+        from revisor.corpus import prepare, sha256
+        annex = self.make_pdf("referencia.pdf", "Referencia contratual de teste", pages=2)
+        self.window.add_paths([str(annex)])
+        self.window.start_review()
+        entry = next(e for e in self.window.entries if e[1] == "referencia.pdf")
+        original_hash = sha256(annex)
+        finding = Finding("reference", "IA-01", "alerta", "Referencia exige conferencia", 2,
+            "A fonte citada precisa de conferencia", "Conferir fonte e edicao", origin="ia",
+            document_sha256=entry[2], excerpt="Referencia contratual de teste")
+        self.window.review.findings = [finding]
+        self.window.show_review(self.window.review)
+        self.assertEqual(self.window.active_entry[2], entry[2])
+        self.assertEqual(self.window.page.value(), 2)
+        self.assertIn("Amarelo", self.window.highlight_note.text())
+        self.assertIn("PONTO: Referencia exige conferencia", self.window.details.toPlainText())
+        clean = QPixmap()
+        clean.loadFromData(base64.b64decode(prepare(entry, 2)["data"].split(",", 1)[1]))
+        clean = clean.scaledToWidth(self.window.preview.pixmap().width(), Qt.TransformationMode.SmoothTransformation)
+        self.assertNotEqual(clean.toImage(), self.window.preview.pixmap().toImage())
+        self.window.zoom.setValue(120)
+        self.assertIn("Amarelo", self.window.highlight_note.text())
+        self.window.page.setValue(1)
+        self.assertNotIn("Amarelo:", self.window.highlight_note.text())
+        self.assertEqual(sha256(annex), original_hash)
+
 
 if __name__ == "__main__":
     unittest.main()

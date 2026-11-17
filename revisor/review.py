@@ -61,6 +61,7 @@ class Finding:
     origin: str = "local"
     document_sha256: str = ""
     tracked: bool = False
+    excerpt: str = ""
 
 
 @dataclass
@@ -149,10 +150,10 @@ def analyze_pages(pages, source=None, evidence_files=None, stage="antes_da_emiss
     review = Review(str(uuid.uuid4()), datetime.now(timezone.utc).isoformat(), source, family,
                     len(pages), evidence_files=evidence_files or [], stage=stage)
 
-    def add(rule, severity, title, page, evidence, expected):
+    def add(rule, severity, title, page, evidence, expected, excerpt=""):
         key = f"{source.get('sha256')}|{rule}|{page}|{title}"
         review.findings.append(Finding(hashlib.sha256(key.encode()).hexdigest()[:16], rule,
-                                       severity, title, page, evidence.strip()[:1500], expected))
+                                       severity, title, page, evidence.strip()[:1500], expected, excerpt=excerpt))
 
     if not pages or sum(len(t.strip()) for t in pages) < 100:
         add("EXT-01", "alerta", "PDF sem texto suficiente para revisão local", 1, "Texto insuficiente.",
@@ -169,7 +170,7 @@ def analyze_pages(pages, source=None, evidence_files=None, stage="antes_da_emiss
                 "Conferir sequência e total das páginas; um anexo externo pode ter paginação independente.")
         if "farmacopeia brasileira" in text and re.search(r"8\s*[ªa°º]?\s*edi[cç][aã]o\s*[-–—]?\s*2024", text):
             add("NRM-04", "alerta", "Edição e ano da Farmacopeia incompatíveis", index,
-                "Farmacopeia Brasileira, 8ª edição - 2024", "Conferir a referência usada: 7ª/2024, 8ª/2026 (Anvisa). Não trocar o método automaticamente.")
+                "Farmacopeia Brasileira, 8ª edição - 2024", "Conferir a referência usada: 7ª/2024, 8ª/2026 (Anvisa). Não trocar o método automaticamente.", excerpt="Farmacopeia Brasileira")
         if family == "ar_ambiente" and "sistema de distribuicao de ar comprimido" in text:
             add("TXT-02", "alerta", "Objeto do relatório inconsistente", index,
                 "Cabeçalho: ar ambiente. Objetivo: sistema de distribuição de ar comprimido.",
@@ -188,7 +189,7 @@ def analyze_pages(pages, source=None, evidence_files=None, stage="antes_da_emiss
                 "Definições de sala limpa e partículas em relatório de hidrogênio.", "Conferir pertinência das definições ao escopo.")
         if "responsabilidade" in text and "neste protocolo" in text:
             add("TXT-03", "informativo", "Documento chamado de protocolo", index,
-                "Referência a protocolo dentro do relatório.", "Adequar a nomenclatura sem inferir erro do ensaio.")
+                "Referência a protocolo dentro do relatório.", "Adequar a nomenclatura sem inferir erro do ensaio.", excerpt="neste protocolo")
 
         # Captura unidades do valor, preservando sinal de censura e sem converter resultados.
         oxygen_values = list(re.finditer(r"oxigenio\s+(?:informativo\s+)?([<>≤≥]?\s*[\d.,]+)\s*(ppm|%)(?=\s|$)", text))
@@ -235,7 +236,7 @@ def analyze_pages(pages, source=None, evidence_files=None, stage="antes_da_emiss
         add("EVD-03", "alerta" if possibly_included else "bloqueante", "Anexos citados exigem conferência", annex_page,
             "Cita relatório de ensaio e certificados de calibração.",
             "Não localizados no pacote recebido; conferir e adicionar as evidências faltantes." if not possibly_included else
-            "Há arquivos adicionais ou páginas após a lista de anexos. Conferir se contêm os laudos e certificados citados; não presumir ausência.")
+            "Há arquivos adicionais ou páginas após a lista de anexos. Conferir se contêm os laudos e certificados citados; não presumir ausência.", excerpt="Anexo 1")
     sample_dates = []
     for text in texts:
         if "especificacao" in text and "data de amostragem" in text:
@@ -266,7 +267,7 @@ def analyze_pages(pages, source=None, evidence_files=None, stage="antes_da_emiss
         if not meaningful:
             add("ED-03", "alerta" if stage == "antes_da_emissao" else "informativo",
                 "Campo de aprovação sem texto preenchido", approval_page, "Aprovado por: sem nome extraído.",
-                "Verificar visualmente assinatura/marca gráfica e etapa documental; um campo vazio em rascunho não reprova o ensaio.")
+                "Verificar visualmente assinatura/marca gráfica e etapa documental; um campo vazio em rascunho não reprova o ensaio.", excerpt="Aprovado por:")
     if family in {"ar_comprimido_respiravel", "ar_ambiente"}:
         add("REV-01", "informativo", "Confirmar marcação gráfica da conclusão", len(pages),
             "Checkboxes e marcas gráficas não são decididos pelo extrator de texto.",
