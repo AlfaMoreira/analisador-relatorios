@@ -3,6 +3,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 import threading
+import sys
 
 import pymupdf
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
@@ -20,6 +21,8 @@ from . import ai
 from .theme import STYLE, logo_path
 from .learning import ExampleStore
 from .annotations import export_annotated
+from .version import APP_VERSION
+from .updates import check_update, stage_update, start_installer, UpdateError
 
 
 class Worker(QThread):
@@ -79,10 +82,13 @@ class Window(QMainWindow):
         screen_title = QLabel("Revisão assistida")
         screen_title.setObjectName("screenTitle")
         titles.addWidget(screen_title)
-        subtitle = QLabel("Documentos, inteligência artificial e conferência em um só lugar")
+        subtitle = QLabel(f"Versão {APP_VERSION} · Documentos, IA e conferência em um só lugar")
         subtitle.setObjectName("subtitle")
         titles.addWidget(subtitle)
         header.addLayout(titles, 1)
+        self.update_button = QPushButton("Atualizações")
+        self.update_button.clicked.connect(self.check_updates)
+        header.addWidget(self.update_button)
         self.ai_state = QLabel("IA desconectada")
         self.ai_state.setObjectName("aiStatus")
         self.ai_state.setMaximumHeight(40)
@@ -271,13 +277,52 @@ class Window(QMainWindow):
         bottom.addWidget(self.cancel_button)
         root.addLayout(bottom)
         self.setCentralWidget(body)
-        self.input_controls = [self.add_button, self.run, self.use_ai, self.models, self.connect_button,
+        self.input_controls = [self.add_button, self.run, self.use_ai, self.models, self.connect_button, self.update_button,
                                self.account, self.logout, options, reopen, compare_button, contribute,
                                self.use_examples, save, pdf, js]
         self.refresh_history()
         self.reload_accounts()
         if self.account.currentData():
             QTimer.singleShot(0, self.load_models)
+        result_path = self.root / "update-result.json"
+        if result_path.exists():
+            try:
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+                self.status.setText("Atualização concluída; sua biblioteca local foi preservada." if result.get("success") else
+                                    "A atualização não foi concluída. " + result.get("message", "A versão anterior está disponível."))
+            except (ValueError, OSError):
+                pass
+
+    def check_updates(self):
+        self.status.setText("Consultando a versão publicada no GitHub…")
+        def checked(release):
+            if release is None:
+                self.status.setText(f"Nenhuma atualização mais nova disponível. Versão atual: {APP_VERSION}.")
+                return
+            if not getattr(sys, "frozen", False):
+                self.show_error("A atualização automática funciona no pacote Windows. Esta execução usa o código-fonte.")
+                return
+            message = (f"Versão disponível: {release.version}\nVersão atual: {APP_VERSION}\n\n"
+                       f"Download: {release.size / 1024 / 1024:.1f} MB\n\n{release.notes[:4000]}\n\n"
+                       "O programa será fechado e reaberto. Banco local, revisões e credenciais permanecem na biblioteca do usuário. "
+                       "Será guardada uma cópia da versão anterior. Baixar e instalar agora?")
+            dialog = QMessageBox(self)
+            dialog.setWindowTitle("Atualização disponível")
+            dialog.setTextFormat(Qt.TextFormat.PlainText)
+            dialog.setText(message)
+            dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            dialog.setDefaultButton(QMessageBox.StandardButton.No)
+            if dialog.exec() != QMessageBox.StandardButton.Yes:
+                self.status.setText("Atualização adiada. O programa atual continua disponível.")
+                return
+            def staged(source):
+                try:
+                    start_installer(source, Path(sys.executable).parent, self.root)
+                    self.close()
+                except (UpdateError, OSError) as error:
+                    self.show_error(str(error))
+            self.run_job(lambda progress, cancel: stage_update(release, self.root / "updates", progress, cancel), staged)
+        self.run_job(lambda progress, cancel: check_update(), checked)
 
     def show_error(self, message):
         self.status.setText(message)

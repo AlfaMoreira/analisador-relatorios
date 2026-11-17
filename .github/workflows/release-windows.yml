@@ -1,0 +1,43 @@
+name: Publicar versão Windows
+on:
+  push:
+    branches: [main, feat/login-chatgpt]
+    paths:
+      - 'revisor/**'
+      - 'tests/**'
+      - 'assets/**'
+      - 'app.py'
+      - 'build_windows.py'
+      - 'release_windows.py'
+      - 'requirements.txt'
+      - '.github/workflows/release-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: release-windows
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Instalar dependências
+        run: python -m pip install -r requirements.txt pyinstaller==6.22.3
+      - name: Testar
+        run: python -m unittest discover -s tests -v
+      - name: Gerar programa Windows
+        run: python build_windows.py --distpath dist --workpath C:/celacanto-build
+      - name: Testar abertura do pacote
+        shell: pwsh
+        run: |
+          $testProcess = Start-Process -FilePath 'dist/RevisorCelacanto/RevisorCelacanto.exe' -ArgumentList '--smoke','--data-dir','C:/celacanto-smoke' -WindowStyle Hidden -Wait -PassThru
+          if ($testProcess.ExitCode -ne 0) { throw 'O executável não passou no teste de abertura.' }
+      - name: Publicar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python release_windows.py --dist dist --publish

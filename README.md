@@ -58,6 +58,12 @@ Adicione `--evidence LAUDO.pdf` por arquivo de evidência disponível.
 
 ### Pacote Windows
 
+A partir da versão 0.4, use **Atualizações** no próprio programa para consultar
+novas releases no GitHub e baixar o pacote. A aplicação fecha, troca os arquivos
+do programa e reabre, preservando banco, revisões e credenciais fora da instalação.
+As versões anteriores precisam de um download manual para receber o atualizador.
+Consulte [publicação, integridade e recuperação](docs/atualizacoes.md).
+
 Execute `Empacotar.ps1` para gerar uma pasta distribuível, sem exigir Python na máquina de destino.
 O executável fica em `dist/RevisorCelacanto/RevisorCelacanto.exe`; distribua a pasta inteira.
 O pacote ainda requer testes em outra máquina e não possui assinatura digital.
