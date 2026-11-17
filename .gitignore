@@ -15,6 +15,7 @@ revisoes/
 *.jpeg
 *.png
 *.zip
+!assets/celacanto-horizontal.jpeg
 
 # Segredos
 .env
@@ -41,3 +42,10 @@ Thumbs.db
 # Estado de ferramentas locais
 .omc/
 .superpowers/
+
+# Credenciais, biblioteca e auditoria locais
+*.dpapi
+*.sqlite3
+host-id.txt
+envios.jsonl
+app.lock

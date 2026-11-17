@@ -1,0 +1,57 @@
+name: Publicar versão Windows
+on:
+  push:
+    branches: [main, feat/login-chatgpt]
+    paths:
+      - 'revisor/**'
+      - 'tests/**'
+      - 'assets/**'
+      - 'app.py'
+      - 'build_windows.py'
+      - 'release_windows.py'
+      - 'requirements.txt'
+      - 'installer/**'
+      - '.github/workflows/release-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: release-windows
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Instalar dependências
+        run: python -m pip install -r requirements.txt pyinstaller==6.22.3
+      - name: Testar
+        run: python -m unittest discover -s tests -v
+      - name: Gerar programa Windows
+        run: python build_windows.py --distpath dist --workpath C:/celacanto-build
+      - name: Testar abertura do pacote
+        shell: pwsh
+        run: |
+          $testProcess = Start-Process -FilePath 'dist/RevisorCelacanto/RevisorCelacanto.exe' -ArgumentList '--smoke','--data-dir','C:/celacanto-smoke' -WindowStyle Hidden -Wait -PassThru
+          if ($testProcess.ExitCode -ne 0) { throw 'O executável não passou no teste de abertura.' }
+      - name: Gerar instalador Windows
+        shell: pwsh
+        run: |
+          $compiler = 'C:/Program Files (x86)/Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path -LiteralPath $compiler)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Nao foi possivel preparar o Inno Setup.' }
+          }
+          python installer/build_installer.py --dist dist --compiler $compiler
+          if ($LASTEXITCODE -ne 0) { throw 'Falha ao gerar instalador.' }
+      - name: Testar instalacao e preservacao dos dados
+        shell: pwsh
+        run: ./installer/test_installer.ps1 -Dist dist
+      - name: Publicar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python release_windows.py --dist dist --publish
