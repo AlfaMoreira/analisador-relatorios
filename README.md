@@ -60,6 +60,8 @@ Adicione `--evidence LAUDO.pdf` por arquivo de evidência disponível.
 
 ### Pacote Windows
 
+A partir da versão 0.5.2, o arquivo **RevisorCelacanto-Instalador.exe** instala para o usuário atual, cria atalho no menu Iniciar e inclui desinstalação, preservando a biblioteca. O ZIP portátil continua disponível. Consulte [instalação e limites de desempenho](docs/instalador-windows.md).
+
 A partir da versão 0.4, use **Atualizações** no próprio programa para consultar
 novas releases no GitHub e baixar o pacote. A aplicação fecha, troca os arquivos
 do programa e reabre, preservando banco, revisões e credenciais fora da instalação.

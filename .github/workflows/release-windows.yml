@@ -10,6 +10,7 @@ on:
       - 'build_windows.py'
       - 'release_windows.py'
       - 'requirements.txt'
+      - 'installer/**'
       - '.github/workflows/release-windows.yml'
   workflow_dispatch:
 permissions:
@@ -37,6 +38,19 @@ jobs:
         run: |
           $testProcess = Start-Process -FilePath 'dist/RevisorCelacanto/RevisorCelacanto.exe' -ArgumentList '--smoke','--data-dir','C:/celacanto-smoke' -WindowStyle Hidden -Wait -PassThru
           if ($testProcess.ExitCode -ne 0) { throw 'O executável não passou no teste de abertura.' }
+      - name: Gerar instalador Windows
+        shell: pwsh
+        run: |
+          $compiler = 'C:/Program Files (x86)/Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path -LiteralPath $compiler)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Nao foi possivel preparar o Inno Setup.' }
+          }
+          python installer/build_installer.py --dist dist --compiler $compiler
+          if ($LASTEXITCODE -ne 0) { throw 'Falha ao gerar instalador.' }
+      - name: Testar instalacao e preservacao dos dados
+        shell: pwsh
+        run: ./installer/test_installer.ps1 -Dist dist
       - name: Publicar release
         env:
           GH_TOKEN: ${{ github.token }}
