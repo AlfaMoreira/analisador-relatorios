@@ -51,6 +51,9 @@ def export_pdf(review, target):
              f"<p><b>Relatório:</b> {esc(review.source['name'])}<br>"
              f"<b>Família:</b> {esc(review.family)} | <b>Páginas:</b> {review.page_count}<br>"
              f"<b>Revisor:</b> {esc(review.reviewer or 'não informado')}<br>"
+             f"<b>Cliente / contrato:</b> {esc(review.client_id or 'não informado')} / {esc(review.contract or 'não informado')}<br>"
+             f"<b>Skill / perfil:</b> {esc(review.review_context.get('skill', {}).get('version', 'não registrada'))} / "
+             f"{esc((review.review_context.get('criteria_profile') or {}).get('version', 'sem perfil'))}<br>"
              f"<b>Etapa:</b> {esc(review.stage)} | <b>Regras:</b> {esc(review.rules_version)}<br>"
              f"<b>IA:</b> {esc(review.ai_status)} | <b>Modelo:</b> {esc(review.ai_model or 'não utilizado')}<br>"
              f"<b>Criação UTC:</b> {esc(review.created_at)}</p>",
@@ -88,10 +91,14 @@ def export_pdf(review, target):
     if review.comparison:
         parts.append("<h2>Comparação com a revisão anterior</h2>")
         parts.append("<p>" + esc(review.comparison["note"]) + "</p>")
-        labels = {"persiste": "Ainda detectado", "nao_redetectado": "Não redetectado - confirmar", "novo": "Novo apontamento"}
+        labels = {"persiste": "Ainda detectado", "nao_redetectado": "Não redetectado - confirmar", "novo": "Novo apontamento",
+                  "correcao_confirmada": "Correção confirmada pelo revisor"}
         for item in review.comparison["items"]:
             parts.append(f"<p><b>{esc(labels[item['state']])}:</b> {esc(item['title'])} "
                          f"(página anterior {esc(item['previous_page'] or '-')}; atual {esc(item['current_page'] or '-')}).</p>")
+            if item.get("confirmation"):
+                confirmation = item["confirmation"]
+                parts.append(f"<p>Confirmado por {esc(confirmation['reviewer'])}: {esc(confirmation['comment'])}</p>")
     parts.append("<h2>Referências e limites</h2>")
     for reference in review.references:
         parts.append(f"<p><b>{esc(reference['title'])}</b><br>{esc(reference['scope'])}<br>"

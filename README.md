@@ -13,6 +13,8 @@ consulta assistida por IA com referências selecionadas. **A decisão de emitir 
 Piloto executável: revisão documental local, histórico, decisões justificadas,
 parecer PDF/JSON, login ChatGPT opcional e biblioteca de referências.
 O motor atual cobre verificações selecionadas de hidrogênio, ar comprimido respirável e ar ambiente.
+Na versão 0.5, a IA recebe uma skill versionada, perfis de critérios por cliente/contrato e exemplos confirmados do mesmo escopo.
+Consulte [cadastro, histórico e limites da skill](docs/skill-e-clientes.md).
 Outras famílias, validação normativa integral e liberação para produção permanecem pendentes.
 
 ### Executar no Windows
@@ -72,10 +74,10 @@ O pacote ainda requer testes em outra máquina e não possui assinatura digital.
 
 ## Princípios
 
-- O critério escrito no relatório é mandatório; a norma de referência gera alerta.
+- Divergências entre critérios do relatório e perfil aprovado são apresentadas ao revisor, com suas fontes, sem escolha silenciosa.
 - Nenhum valor lido de imagem entra nas contas sem confirmação humana.
 - Os arquivos originais nunca são alterados: cada um tem hash SHA-256 registrado no catálogo local e no registro de envio.
-- A IA de visão (ChatGPT nesta implementação) é opcional, desligada por padrão e usada só nas imagens que a pessoa escolher.
+- A IA de visão (ChatGPT nesta implementação) é opcional; o conjunto de páginas é enviado apenas após confirmação explícita, incluindo perfil e exemplos selecionados.
 
 ## Stack
 

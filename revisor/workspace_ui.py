@@ -11,7 +11,7 @@ from PySide6.QtGui import QPixmap, QIcon
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QFileDialog, QListWidget, QListWidgetItem, QSpinBox,
     QPlainTextEdit, QMessageBox, QSplitter, QTableWidget, QTableWidgetItem,
-    QHeaderView, QLineEdit, QCheckBox, QScrollArea, QProgressBar, QMenu, QDialog)
+    QHeaderView, QLineEdit, QCheckBox, QScrollArea, QProgressBar, QMenu, QDialog, QInputDialog)
 from .auth import Auth, AuthError
 from .corpus import Corpus, prepare, sha256
 from .packet import build_packet, batches, local_review
@@ -23,6 +23,28 @@ from .learning import ExampleStore
 from .annotations import export_annotated
 from .version import APP_VERSION
 from .updates import check_update, stage_update, start_installer, UpdateError
+from .profiles import ProfileStore, FAMILIES
+from .profile_ui import ProfileDialog
+from .context import prepare_context, snapshot
+
+
+class NavigationSpinBox(QSpinBox):
+    """Mantém o editor visível no estilo Windows sem botões internos."""
+    def __init__(self):
+        super().__init__()
+        self.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        self.valueChanged.connect(self.fit_editor)
+
+    def fit_editor(self, *_args):
+        self.lineEdit().setGeometry(self.rect().adjusted(8, 3, -8, -3))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.fit_editor()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.fit_editor()
 
 
 class Worker(QThread):
@@ -53,6 +75,7 @@ class Window(QMainWindow):
         self.corpus = Corpus(self.root / "corpus")
         self.store = ReviewStore(self.root / "revisoes")
         self.examples = ExampleStore(self.root / "exemplos.sqlite3")
+        self.profiles = ProfileStore(self.root / "criterios.sqlite3")
         self.entries = []
         self.review = None
         self.worker = None
@@ -127,6 +150,39 @@ class Window(QMainWindow):
         self.run.clicked.connect(self.start_review)
         toolbar.addWidget(self.run)
         root.addLayout(toolbar)
+        scope_row = QHBoxLayout()
+        self.client_id = QLineEdit()
+        self.client_id.setPlaceholderText("Identificador do cliente")
+        self.contract = QLineEdit()
+        self.contract.setPlaceholderText("Contrato / escopo")
+        self.family = QComboBox()
+        self.family.addItem("Família automática", "automatico")
+        for family in FAMILIES:
+            self.family.addItem(family.replace("_", " "), family)
+        self.reference_date = QLineEdit(datetime.now().date().isoformat())
+        self.reference_date.setMaximumWidth(115)
+        self.reference_date.setToolTip("Data de referência para a vigência dos critérios, AAAA-MM-DD. Confirme a data pertinente ao ensaio.")
+        self.profile = QComboBox()
+        self.profile.setMinimumWidth(180)
+        self.profile.setMaximumWidth(320)
+        self.profile.currentIndexChanged.connect(self.select_profile)
+        for widget in (self.client_id, self.contract, self.family):
+            scope_row.addWidget(widget)
+        scope_row.addWidget(QLabel("Data dos critérios"))
+        scope_row.addWidget(self.reference_date)
+        root.addLayout(scope_row)
+        profile_row = QHBoxLayout()
+        profile_row.addWidget(QLabel("Perfil de critérios"))
+        profile_row.addWidget(self.profile, 1)
+        criteria_button = QPushButton("Critérios e análise crítica")
+        criteria_button.clicked.connect(self.edit_profile)
+        profile_row.addWidget(criteria_button)
+        history_button = QPushButton("Histórico do cliente")
+        history_button.clicked.connect(self.client_history)
+        profile_row.addWidget(history_button)
+        profile_row.addStretch(1)
+        root.addLayout(profile_row)
+        self.refresh_profiles()
         split = QSplitter()
         split.setHandleWidth(12)
         left = QWidget()
@@ -181,9 +237,10 @@ class Window(QMainWindow):
         previous.clicked.connect(lambda: self.page.setValue(self.page.value() - 1))
         navigation.addWidget(previous)
         navigation.addWidget(QLabel("Página"))
-        self.page = QSpinBox()
+        self.page = NavigationSpinBox()
         self.page.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         self.page.setAccessibleName("Número da página")
+        self.page.setMinimumWidth(60)
         self.page.setRange(1, 1)
         self.page.valueChanged.connect(self.render_page)
         navigation.addWidget(self.page)
@@ -201,9 +258,10 @@ class Window(QMainWindow):
         zoom_out.setToolTip("Diminuir zoom")
         zoom_out.clicked.connect(lambda: self.zoom.stepDown())
         navigation.addWidget(zoom_out)
-        self.zoom = QSpinBox()
+        self.zoom = NavigationSpinBox()
         self.zoom.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         self.zoom.setAccessibleName("Porcentagem de zoom")
+        self.zoom.setMinimumWidth(75)
         self.zoom.setRange(30, 250)
         self.zoom.setSingleStep(10)
         self.zoom.setSuffix("%")
@@ -539,6 +597,68 @@ class Window(QMainWindow):
         except Exception:
             self.preview.setText("Página indisponível ou arquivo alterado.")
 
+    def refresh_profiles(self, selected=None):
+        self.profile.blockSignals(True)
+        self.profile.clear()
+        self.profile.addItem("Sem perfil contratual", None)
+        for profile in self.profiles.list():
+            self.profile.addItem(f"{profile['client_name']} · {profile['contract']} · v{profile['version']} · {profile['status']}", profile)
+            if profile["profile_id"] == selected:
+                self.profile.setCurrentIndex(self.profile.count() - 1)
+        self.profile.blockSignals(False)
+        if selected:
+            self.select_profile()
+
+    def select_profile(self):
+        profile = self.profile.currentData()
+        if profile:
+            self.client_id.setText(profile["client_id"])
+            self.contract.setText(profile["contract"])
+            self.family.setCurrentIndex(max(0, self.family.findData(profile["family"])))
+        if hasattr(self, "history"):
+            self.refresh_history()
+
+    def edit_profile(self):
+        dialog = ProfileDialog(self.profiles, self, self.profile.currentData())
+        if dialog.exec():
+            self.refresh_profiles(dialog.saved_id)
+
+    def client_history(self):
+        client = self.client_id.text().strip()
+        contract = self.contract.text().strip()
+        if not client:
+            self.show_error("Informe o identificador do cliente para consultar seu histórico.")
+            return
+        self.refresh_history()
+        reviews, counts = [], {}
+        for path in self.store.list():
+            try:
+                review = self.store.load(path)
+            except (ValueError, TypeError, KeyError):
+                continue
+            if review.client_id != client or review.contract != contract:
+                continue
+            reviews.append(review)
+            for finding in review.findings:
+                if finding.decision == "corrigir":
+                    key = (finding.rule, finding.title)
+                    counts[key] = counts.get(key, 0) + 1
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Histórico e recorrências do cliente")
+        dialog.resize(850, 560)
+        layout = QVBoxLayout(dialog)
+        text = QPlainTextEdit()
+        text.setReadOnly(True)
+        lines = [f"Cliente: {client} · Contrato: {contract}", f"{len(reviews)} revisão(ões) registradas.",
+                 "Recorrências contam decisões 'corrigir'; rodadas do mesmo documento podem se repetir.",
+                 "Pendências e sugestões não confirmadas não são defeitos comprovados.", ""]
+        lines += [f"{count} ocorrência(s) · {rule} · {title}" for (rule, title), count in sorted(counts.items(), key=lambda x: -x[1])]
+        lines += ["", "REVISÕES"]
+        lines += [f"{r.created_at[:16]} · {r.source['name']} · {r.ai_status} · {len(r.findings)} apontamentos" for r in reviews]
+        text.setPlainText("\n".join(lines))
+        layout.addWidget(text)
+        dialog.exec()
+
     def start_review(self):
         wants_ai = self.use_ai.isChecked()
         model = self.models.currentData()
@@ -546,14 +666,21 @@ class Window(QMainWindow):
             self.show_error("A IA ainda não está pronta. Clique em Conectar ChatGPT e conclua a verificação, ou desmarque IA na primeira leitura.")
             return
         selected = list(self.entries)
+        scope = {"client_id": self.client_id.text().strip(), "contract": self.contract.text().strip(),
+                 "family": self.family.currentData(), "reference_date": self.reference_date.text().strip()}
+        profile = self.profile.currentData()
+        try:
+            from datetime import date
+            date.fromisoformat(scope["reference_date"])
+        except ValueError:
+            self.show_error("Informe a data de referência dos critérios no formato AAAA-MM-DD.")
+            return
         def prepared(packet):
-            if wants_ai and self.use_examples.isChecked():
-                from .review import normalized
-                primary = next(d for d in packet["documents"] if d["kind"] == "pdf")
-                header = normalized(next(p["text"] for p in packet["pages"] if p["document"] == primary["id"]))
-                family = "ar_comprimido_respiravel" if "ar comprimido respiravel" in header else "hidrogenio" if "hidrogenio" in header else "ar_ambiente" if "ar ambiente" in header else "desconhecida"
-                packet["examples"] = [{k: e[k] for k in ("rule", "title", "evidence", "expected", "comment", "decision")}
-                                      for e in self.examples.examples(family)]
+            try:
+                prepare_context(packet, scope, profile, self.examples if wants_ai and self.use_examples.isChecked() else None)
+            except ValueError as error:
+                self.show_error(str(error))
+                return
             if wants_ai and not self.confirm_send(packet):
                 self.status.setText("Envio cancelado. Nenhum documento foi enviado à IA.")
                 return
@@ -567,6 +694,9 @@ class Window(QMainWindow):
                    descriptions + f"\n\nTodas as {len(packet['pages'])} páginas entram na leitura: texto extraído e "
                    f"{images} página(s)/foto(s) completas como imagem, em {len(batches(packet))} parte(s). "
                    f"Inclui {len(packet.get('examples', []))} exemplo(s) confirmado(s) da base local. "
+                   f"Skill {packet['skill']['version']}; cliente: {packet['scope']['client_id'] or 'não informado'}. "
+                   f"Perfil: {packet['criteria_profile']['version'] if packet.get('criteria_profile') else 'sem critérios contratuais cadastrados'}. "
+                   "O perfil selecionado, a análise crítica e os exemplos listados também serão enviados. "
                    "O uso depende dos limites do plano. Autoriza esta revisão?")
         return QMessageBox.question(self, "Confirmar primeira leitura com IA", message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -578,11 +708,12 @@ class Window(QMainWindow):
             suggestions, notes, ai_error = [], [], None
             if model:
                 record = {"at": datetime.now(timezone.utc).isoformat(), "model": model,
+                          "context": snapshot(packet),
                           "examples": len(packet.get("examples", [])),
                           "files": [{k: d[k] for k in ("name", "sha256", "pages")} for d in packet["documents"]]}
                 def audit(status):
                     with (self.root / "envios.jsonl").open("a", encoding="utf-8") as stream:
-                        stream.write(json.dumps(dict(record, status=status), ensure_ascii=False) + "\n")
+                        stream.write(json.dumps(dict(record, status=status, context=snapshot(packet)), ensure_ascii=False) + "\n")
                 audit("autorizado")
                 try:
                     suggestions, notes = ai.review_packet(self.auth, model, packet, progress, cancel)
@@ -596,13 +727,21 @@ class Window(QMainWindow):
                 raise ValueError("Revisão cancelada.")
             progress("Conferindo critérios e consistência com as regras locais…")
             review = local_review(packet)
+            review.client_id = packet.get("scope", {}).get("client_id", "")
+            review.contract = packet.get("scope", {}).get("contract", "")
+            review.family = packet.get("scope", {}).get("family", review.family)
+            review.review_context = snapshot(packet)
+            if not packet.get("criteria_profile"):
+                review.limitations.append("Sem perfil de critérios aprovado: critérios contratuais não verificados.")
+            elif not model:
+                review.limitations.append("Perfil registrado para rastreabilidade; critérios personalizados não foram avaliados por IA nesta rodada. As regras locais continuam limitadas ao piloto.")
             review.findings = suggestions + review.findings
             review.ai_model = model or ""
             review.ai_status = "falhou" if ai_error else "concluida" if model else "nao_utilizada"
             review.limitations.extend(notes)
             if ai_error:
                 review.limitations.append("IA não concluída: " + ai_error)
-            if model:
+            if model and not ai_error:
                 review.limitations.append("A IA recebeu texto e imagem de todas as páginas em lotes. Leituras de imagem permanecem não confirmadas; relações entre lotes exigem conferência humana.")
             if previous:
                 review.audit.append({"at": datetime.now(timezone.utc).isoformat(), "event": "nova_rodada", "previous_review": previous})
@@ -617,6 +756,19 @@ class Window(QMainWindow):
 
     def show_review(self, review):
         self.review = review
+        self.client_id.setText(review.client_id)
+        self.contract.setText(review.contract)
+        context = review.review_context
+        self.reference_date.setText(context.get("scope", {}).get("reference_date", datetime.now().date().isoformat()))
+        self.family.setCurrentIndex(max(0, self.family.findData(context.get("scope", {}).get("family", "automatico"))))
+        self.profile.blockSignals(True)
+        self.profile.setCurrentIndex(0)
+        saved_profile = context.get("criteria_profile") or {}
+        for index in range(1, self.profile.count()):
+            if self.profile.itemData(index).get("profile_id") == saved_profile.get("profile_id"):
+                self.profile.setCurrentIndex(index)
+                break
+        self.profile.blockSignals(False)
         self.reviewer.setText(review.reviewer)
         self.visible_findings = list(review.findings)
         self.findings.blockSignals(True)
@@ -634,6 +786,10 @@ class Window(QMainWindow):
         if coverage:
             visual = sum(c["status"] == "requer_leitura_visual" for c in coverage)
             self.summary.setText(self.summary.text() + f"\n{len(coverage)} páginas processadas · {visual} exigem leitura visual.")
+        if review.review_context:
+            skill = review.review_context.get("skill", {})
+            profile = review.review_context.get("criteria_profile")
+            self.summary.setText(self.summary.text() + f"\nCliente: {review.client_id or 'não informado'} · Skill: {skill.get('version', '—')} · Perfil: {profile['version'] if profile else 'não selecionado'}")
         self.summary.setToolTip("Conferência local: paginação, campos de modelo e regras técnicas disponíveis. "
             "Nem todo conteúdo possui regra implementada. Zero achados não significa aprovação.")
         self.refresh_history()
@@ -695,8 +851,9 @@ class Window(QMainWindow):
             return
         try:
             count = self.examples.contribute(self.review)
-            total = len(self.examples.examples(self.review.family, limit=100000))
-            self.example_count.setText(f"Base local desta família: {total} exemplo(s) confirmado(s).")
+            total = len(self.examples.examples(self.review.family, limit=100000,
+                        client_id=self.review.client_id, contract=self.review.contract))
+            self.example_count.setText(f"Base local deste cliente/escopo e família: {total} exemplo(s) confirmado(s).")
             self.status.setText(f"{count} exemplo(s) atualizado(s) na base local. Nenhum dado foi enviado à IA e nenhum modelo foi treinado.")
         except ValueError as error:
             self.show_error(str(error))
@@ -708,6 +865,14 @@ class Window(QMainWindow):
         try:
             previous = self.store.load(self.history.currentData())
             comparison = compare_reviews(previous, self.review)
+            if not comparison["identity_confirmed"]:
+                answer = QMessageBox.question(self, "Confirmar identidade do relatório",
+                    f"Não foi possível confirmar automaticamente o mesmo identificador.\nAnterior: {previous.source['name']}\n"
+                    f"Atual: {self.review.source['name']}\nSão versões do mesmo relatório, cliente e escopo?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+                comparison["identity_manually_confirmed"] = True
             self.review.comparison = comparison
             self.store.save(self.review)
         except ValueError as error:
@@ -725,7 +890,8 @@ class Window(QMainWindow):
         table.setHorizontalHeaderLabels(["Situação", "Apontamento", "Antes", "Agora"])
         table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        labels = {"persiste": "Ainda detectado", "nao_redetectado": "Não redetectado · confirmar", "novo": "Novo apontamento"}
+        labels = {"persiste": "Ainda detectado", "nao_redetectado": "Não redetectado · confirmar", "novo": "Novo apontamento",
+                  "correcao_confirmada": "Correção confirmada pelo revisor"}
         for row, item in enumerate(comparison["items"]):
             for col, text in enumerate([labels[item["state"]], item["title"], item["previous_page"] or "—", item["current_page"] or "—"]):
                 table.setItem(row, col, QTableWidgetItem(str(text)))
@@ -738,6 +904,25 @@ class Window(QMainWindow):
         table.cellDoubleClicked.connect(navigate)
         layout.addWidget(table, 1)
         layout.addWidget(QLabel("Duplo clique em um apontamento atual para abrir sua página."))
+        confirm = QPushButton("Confirmar correção no ponto selecionado")
+        def confirm_correction():
+            row = table.currentRow()
+            if row < 0 or not self.active_entry:
+                return
+            justification, ok = QInputDialog.getMultiLineText(dialog, "Confirmar correção",
+                f"Confira a versão atual antes de confirmar. Evidência: {self.active_entry[1]}, página {self.page.value()}.\n"
+                "Identifique o revisor no painel principal e descreva a correção verificada:")
+            if not ok:
+                return
+            try:
+                self.review.confirm_correction(comparison["items"][row].get("previous_finding"),
+                    self.reviewer.text(), justification, self.active_entry[2], self.page.value())
+                self.store.save(self.review)
+                table.item(row, 0).setText(labels["correcao_confirmada"])
+            except ValueError as error:
+                self.show_error(str(error))
+        confirm.clicked.connect(confirm_correction)
+        layout.addWidget(confirm)
         dialog.exec()
 
     def refresh_history(self):
@@ -745,6 +930,8 @@ class Window(QMainWindow):
         for path in self.store.list():
             try:
                 review = self.store.load(path)
+                if self.client_id.text().strip() and (review.client_id != self.client_id.text().strip() or review.contract != self.contract.text().strip()):
+                    continue
                 self.history.addItem(f"{review.source['name']} · {review.created_at[:16]}", str(path))
             except (ValueError, KeyError, TypeError):
                 continue

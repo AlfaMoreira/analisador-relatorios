@@ -30,6 +30,7 @@ QLineEdit { padding:9px; }
 QComboBox { padding:8px; }
 QComboBox QAbstractItemView { background:#152a3b;color:#dceaf1;selection-background-color:#166b62; }
 QSpinBox {padding:7px;}
+QSpinBox QLineEdit {padding:0;border:0;background:transparent;}
 QPlainTextEdit {padding:9px;}
 QListWidget {background:transparent;border:0;outline:0;}
 QListWidget::item {border:1px solid #294254;border-radius:9px;padding:10px;margin-bottom:7px;background:#152a3a;}

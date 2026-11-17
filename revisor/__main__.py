@@ -12,6 +12,10 @@ def main():
     parser.add_argument("--data-dir", default=str(Path(os.environ.get("LOCALAPPDATA", ".")) / "Celacanto" / "AnalisadorRelatorios"))
     parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
+    if args.smoke:
+        from .profiles import FAMILIES, load_skill
+        for family in FAMILIES:
+            load_skill(family)
     app = QApplication(sys.argv[:1])
     Path(args.data_dir).mkdir(parents=True, exist_ok=True)
     lock = QLockFile(str(Path(args.data_dir) / "app.lock"))

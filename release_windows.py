@@ -25,11 +25,13 @@ def main():
     checksum = dist / "SHA256SUMS.txt"
     checksum.write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + "  " + archive.name + "\n", encoding="utf-8")
     notes = dist / "release-notes.md"
-    notes.write_text(f"Piloto Celacanto {APP_VERSION}\n\nNavegação simplificada: página com botões externos anterior/próxima "
-                     "e zoom com botões externos menos/mais, sem setas duplicadas dentro dos campos. "
-                     "Conferência local de todos os PDFs do conjunto, inclusive anexos; "
-                     "cobertura por página, alertas de páginas sem texto suficiente e campos de modelo pendentes. "
-                     "A integração de IA permanece sem alterações. Zero achados não significa aprovação. "
+    notes.write_text(f"Piloto Celacanto {APP_VERSION}\n\nSkill de revisão versionada, critérios e análise crítica por cliente/contrato, "
+                     "perfis imutáveis com vigência e aprovação explícita, histórico por cliente, exemplos pertinentes isolados por escopo "
+                     "e confirmação humana de correções com evidência de página. "
+                     "Login e fornecedor de IA preservados; o contexto de revisão passa a incluir a skill e o perfil selecionado. "
+                     "As revisões registram versão/hash da skill, critérios e lotes de IA tentados/concluídos. "
+                     "Sem IA, critérios personalizados ainda não são executados pelas regras locais. "
+                     "Não há treinamento automático; melhoria de precisão exige avaliação comparativa pela Qualidade. "
                      "Pacote Windows com atualizador integrado. "
                      "Preserva banco local, histórico e credenciais. Ainda requer revisão humana, validação com documentos completos "
                      "e teste de login/inferência reais. Não autoriza emissão técnica.\n", encoding="utf-8")

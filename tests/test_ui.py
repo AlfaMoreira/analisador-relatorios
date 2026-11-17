@@ -138,6 +138,59 @@ class UnifiedWorkflowTests(unittest.TestCase):
         self.assertFalse(self.window.use_ai.isChecked())
         self.assertIn("não autorizado", self.window.status.text())
 
+    def test_client_profile_skill_and_model_are_preserved_in_review_and_consent(self):
+        from test_profiles import profile
+        saved = self.window.profiles.save(profile())
+        self.window.refresh_profiles(saved)
+        self.window.reference_date.setText("2026-11-17")
+        self.ready_ai()
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes) as consent, patch("revisor.ai.review_packet", return_value=([], [])) as infer:
+            self.window.start_review()
+        sent_packet = infer.call_args.args[2]
+        self.assertEqual(sent_packet["criteria_profile"]["profile_id"], saved)
+        self.assertIn("Skill 1.0.0", consent.call_args.args[2])
+        self.assertEqual(self.window.review.client_id, "cliente-a")
+        self.assertEqual(self.window.review.ai_model, "test-model")
+        self.assertEqual(self.window.review.review_context["skill"]["version"], "1.0.0")
+        restored = self.window.store.load(self.window.store.list()[0])
+        self.assertEqual(restored.review_context, self.window.review.review_context)
+
+    def test_wrong_client_profile_blocks_before_consent_or_inference(self):
+        from test_profiles import profile
+        saved = self.window.profiles.save(profile())
+        self.window.refresh_profiles(saved)
+        self.window.client_id.setText("cliente-b")
+        self.ready_ai()
+        with patch.object(self.window, "show_error") as error, patch.object(QMessageBox, "question") as consent, patch("revisor.ai.review_packet") as infer:
+            self.window.start_review()
+        error.assert_called_once()
+        consent.assert_not_called()
+        infer.assert_not_called()
+
+    def test_profile_import_requires_new_approval_and_legacy_history_is_preserved(self):
+        from revisor.profile_ui import ProfileDialog
+        from test_profiles import profile
+        dialog = ProfileDialog(self.window.profiles, self.window, profile())
+        self.assertFalse(dialog.approved.isChecked())
+        self.window.start_review()
+        old_id = self.window.review.id
+        self.window.client_id.setText("cliente-a")
+        self.window.contract.setText("escopo-1")
+        self.window.start_review()
+        self.assertEqual(self.window.history.count(), 1)
+        self.assertEqual(len(self.window.store.list()), 2)
+        self.assertTrue(any(self.window.store.load(p).id == old_id for p in self.window.store.list()))
+        dialog.deleteLater()
+
+    def test_page_and_zoom_values_remain_visible_without_internal_buttons(self):
+        self.window.show()
+        self.app.processEvents()
+        for control in (self.window.page, self.window.zoom):
+            self.assertGreater(control.lineEdit().width(), 30)
+        self.window.zoom.stepUp()
+        self.assertEqual(self.window.zoom.text(), "90%")
+        self.assertGreater(self.window.zoom.lineEdit().width(), 30)
+
 
 if __name__ == "__main__":
     unittest.main()

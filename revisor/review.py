@@ -89,6 +89,9 @@ class Review:
     ai_status: str = "nao_utilizada"
     ai_model: str = ""
     comparison: dict = field(default_factory=dict)
+    client_id: str = ""
+    contract: str = ""
+    review_context: dict = field(default_factory=dict)
 
     def to_dict(self):
         return asdict(self)
@@ -112,6 +115,23 @@ class Review:
                            "comment": comment.strip()})
         finding.decision, finding.comment = decision, comment.strip()
         self.reviewer = reviewer.strip()
+
+    def confirm_correction(self, previous_finding, reviewer, comment, digest, page):
+        if not reviewer.strip() or not comment.strip():
+            raise ValueError("Informe revisor e justificativa da correção conferida na versão atual.")
+        item = next((i for i in self.comparison.get("items", []) if i.get("previous_finding") == previous_finding), None)
+        if not item or item["state"] not in {"nao_redetectado", "correcao_confirmada"}:
+            raise ValueError("Confirme somente um apontamento não redetectado na comparação atual.")
+        document = next((d for d in self.documents if d["sha256"] == digest), None)
+        if not document or type(page) is not int or not 1 <= page <= document["pages"]:
+            raise ValueError("Indique uma página válida da versão atual como evidência da correção.")
+        record = {"at": datetime.now(timezone.utc).isoformat(), "event": "correcao_confirmada_por_revisor",
+                  "reviewer": reviewer.strip(), "comment": comment.strip(), "previous_finding": previous_finding,
+                  "document_sha256": digest, "page": page}
+        item["state"] = "correcao_confirmada"
+        item["confirmation"] = record
+        item["current_page"] = page
+        self.audit.append(record)
 
 
 def analyze_pages(pages, source=None, evidence_files=None, stage="antes_da_emissao"):
@@ -307,7 +327,8 @@ def compare_reviews(previous, current):
     old_id, new_id = identity(previous), identity(current)
     if previous.id == current.id:
         raise ValueError("Selecione uma revisão anterior diferente da atual.")
-    if previous.family != current.family or (old_id and new_id and old_id != new_id):
+    if (previous.client_id != current.client_id or previous.contract != current.contract or
+            previous.family != current.family or (old_id and new_id and old_id != new_id)):
         raise ValueError("Os documentos parecem pertencer a relatórios diferentes. Selecione versões do mesmo relatório.")
     tracked = [f for f in previous.findings if f.tracked]
     if not tracked:
@@ -321,6 +342,11 @@ def compare_reviews(previous, current):
         rows.append({"state": "persiste" if match else "nao_redetectado", "title": old.title, "rule": old.rule,
                      "origin": old.origin, "previous_page": old.page, "current_page": match.page if match else None,
                      "previous_finding": old.id, "current_finding": match.id if match else None})
+        if not match and current.comparison.get("previous_review") == previous.id:
+            saved = next((i for i in current.comparison.get("items", []) if i.get("previous_finding") == old.id
+                          and i.get("state") == "correcao_confirmada"), None)
+            if saved:
+                rows[-1].update(state=saved["state"], confirmation=saved["confirmation"], current_page=saved["current_page"])
     rows.extend({"state": "novo", "title": f.title, "rule": f.rule, "origin": f.origin,
                  "previous_page": None, "current_page": f.page, "previous_finding": None, "current_finding": f.id}
                 for f in available)
